@@ -25,6 +25,7 @@
 #include "compat/kernel_compat.h"
 #ifdef CONFIG_KSU_SUSFS
 #include "../susfs/susfs_def.h"
+#include "selinux/selinux.h"
 #endif // #ifdef CONFIG_KSU_SUSFS
 
 extern void disable_seccomp(void);

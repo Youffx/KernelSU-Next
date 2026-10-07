@@ -554,11 +554,6 @@ static void hook_selinux_status_open(void)
 		pr_err("ksu_selinux_hide: sel_handle_status_ops->open is NULL\n");
 		return;
 	}
-
-	// guard against racing with another hooker: if the slot already points
-	// to us, do not take it as the "original" (would cause self-recursion)
-	if (ops->open == my_sel_open_handle_status)
-		return;
 	
 	orig_sel_open_handle_status = ops->open;
 	patch_fops_open(ops, ksu_sel_open_handle_status);
