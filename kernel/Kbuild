@@ -90,7 +90,10 @@ endif
 
 # Calculate version if git version is available
 ifdef KSU_GIT_VERSION_VALID
-$(eval KSU_VERSION=$(shell expr 30000 + $(KSU_GIT_VERSION) + 289))
+# fork: offset calibrated so the reported version matches the official
+# v3.4.0-legacy total (33294); re-calibrate if this branch grows, as the
+# count-based formula drifts with every new commit
+$(eval KSU_VERSION=$(shell expr 30000 + $(KSU_GIT_VERSION) + 247))
 $(info -- KernelSU-Next version: $(KSU_VERSION))
 else
 # If there is no .git directory, use default version
