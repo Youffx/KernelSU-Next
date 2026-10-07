@@ -13,7 +13,7 @@
 
 struct mount;
 
-#define SUSFS_VERSION "v2.2.0"
+#define SUSFS_VERSION "v2.3.0"
 #define SUSFS_VARIANT "Standalone"
 
 enum UID_SCHEME {
@@ -59,7 +59,7 @@ struct st_susfs_hide_sus_mnts_for_non_su_procs {
 #define KSTAT_SPOOF_BLKSIZE    (1 << 11)
 
 struct st_susfs_sus_kstat {
-	int            is_statically;
+	bool           is_statically;
 	unsigned long  target_ino;
 	char           target_pathname[SUSFS_MAX_LEN_PATHNAME];
 	unsigned long  spoofed_ino;
@@ -81,6 +81,8 @@ struct st_susfs_sus_kstat {
 struct st_susfs_sus_kstat_hlist {
 	unsigned long              target_ino;
 	unsigned long              target_dev;
+	struct kstatfs             spoofed_kstatfs;
+	int                        spoofed_mnt_id;
 	bool                       is_fuse;
 	struct st_susfs_sus_kstat  info;
 	struct hlist_node          node;
@@ -179,6 +181,9 @@ void susfs_add_sus_kstat(void __user **user_info);
 void susfs_update_sus_kstat(void __user **user_info);
 void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat);
 void susfs_sus_kstat_spoof_show_map_vma(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
+int susfs_sus_kstat_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf, bool *is_fuse);
+void susfs_sus_kstat_spoof_inotify_fdinfo(unsigned long *out_target_ino, dev_t *out_target_dev);
+void susfs_sus_kstat_spoof_proc_fd_seq_show(int *out_target_mnt_id, unsigned long *out_target_ino, dev_t target_dev);
 #endif
 
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
@@ -202,9 +207,8 @@ void susfs_add_open_redirect(void __user **user_info);
 struct filename *susfs_open_redirect_spoof_do_sys_openat(struct inode *inode);
 int susfs_open_redirect_spoof_vfs_readlink(struct inode *inode, char __user *buffer, int buflen);
 int susfs_open_redirect_spoof_do_proc_readlink(struct inode *inode, char *tmp_buf, int buflen);
-int susfs_open_redirect_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf);
-int susfs_open_redirect_spoof_seq_show(struct inode *inode, int *out_mnt_id, unsigned long *out_ino);
-int susfs_open_redirect_spoof_show_map_vma(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char *spoofed_name);
+/* callers must hold and release the "susfs_srcu_open_redirect" lock themselves. */
+int susfs_open_redirect_spoof_show_map_vma_srcu(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char **out_spoofed_name);
 #endif
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MAP

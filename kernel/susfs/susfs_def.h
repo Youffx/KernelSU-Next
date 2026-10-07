@@ -43,6 +43,11 @@
 #endif
 
 #define TIF_PROC_UMOUNTED 33
+#define TIF_PROC_NO_SU 34
+#define TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT 35
+
+#define STATX_SUS_KSTAT 0x10000000U
+#define STATX_SUS_KSTAT_FUSE 0x20000000U
 
 #define AS_FLAGS_SUS_PATH 33
 #define AS_FLAGS_SUS_MOUNT 34
@@ -62,6 +67,11 @@ static inline bool susfs_starts_with(const char *str, const char *prefix)
 	return true;
 }
 
+static inline bool susfs_is_current_app_uid(void)
+{
+	return ((current_uid().val % 100000) >= 10000);
+}
+
 static inline bool susfs_is_current_proc_umounted(void)
 {
 	return unlikely(test_thread_flag(TIF_PROC_UMOUNTED));
@@ -70,6 +80,41 @@ static inline bool susfs_is_current_proc_umounted(void)
 static inline void susfs_set_current_proc_umounted(void)
 {
 	set_thread_flag(TIF_PROC_UMOUNTED);
+}
+
+static inline void susfs_clear_current_proc_umounted(void)
+{
+	clear_thread_flag(TIF_PROC_UMOUNTED);
+}
+
+static inline bool susfs_is_current_proc_umounted_for_zygote_next(void)
+{
+	return unlikely(test_thread_flag(TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT));
+}
+
+static inline void susfs_set_current_proc_umounted_for_zygote_next(void)
+{
+	set_thread_flag(TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
+}
+
+static inline void susfs_clear_current_proc_umounted_for_zygote_next(void)
+{
+	clear_thread_flag(TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
+}
+
+static inline bool susfs_is_current_proc_no_su(void)
+{
+	return unlikely(test_thread_flag(TIF_PROC_NO_SU));
+}
+
+static inline void susfs_set_current_proc_no_su(void)
+{
+	set_thread_flag(TIF_PROC_NO_SU);
+}
+
+static inline void susfs_clear_current_proc_no_su(void)
+{
+	clear_thread_flag(TIF_PROC_NO_SU);
 }
 
 static inline bool susfs_is_current_proc_umounted_app(void)
