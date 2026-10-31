@@ -124,7 +124,7 @@ int ksu_event_queue_push(struct ksu_event_queue *queue, __u16 type, __u16 flags,
         return -EINVAL;
     }
 
-    node = kmalloc(sizeof(*node) + len, gfp);
+    node = kmalloc(struct_size(node, payload, len), gfp);
 
     if (node) {
         INIT_LIST_HEAD(&node->list);
@@ -361,6 +361,10 @@ ssize_t ksu_event_queue_read(struct ksu_event_queue *queue, char __user *buf, si
         ret = ksu_event_queue_read_node(queue, buf, count);
         if (ret < 0) {
             if (!copied) {
+                if (ret == -EMSGSIZE) {
+                    copied = 0;
+                    break;
+                }
                 copied = ret;
             }
             break;

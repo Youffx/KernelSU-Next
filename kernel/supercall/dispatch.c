@@ -1,4 +1,6 @@
 #include <linux/capability.h>
+#include "compat/kernel_compat.h"
+#include <linux/kallsyms.h>
 #include <linux/cred.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -10,6 +12,7 @@
 #include "../susfs/susfs.h"
 #include "objsec.h"
 #endif // #ifdef CONFIG_KSU_SUSFS
+
 #include "uapi/supercall.h"
 #include "supercall/internal.h"
 #include "arch.h" // IWYU pragma: keep
@@ -27,6 +30,8 @@
 #include "sulog/event.h"
 #include "sulog/fd.h"
 #include "supercall/supercall.h"
+#include "infra/symbol_resolver.h"
+#include "preinit/preinit.h"
 
 static int do_grant_root(void __user *arg)
 {
@@ -138,7 +143,7 @@ static int do_report_event(void __user *arg)
 				pr_info("boot_complete triggered\n");
 				on_boot_completed();
 #ifdef CONFIG_KSU_SUSFS
-            	susfs_start_sdcard_monitor_fn();
+				susfs_start_sdcard_monitor_fn();
 #endif // #ifdef CONFIG_KSU_SUSFS
 			}
 		}
@@ -309,7 +314,7 @@ static int do_uid_granted_root(void __user *arg)
 		return -EFAULT;
 	}
 
-	cmd.granted = ksu_is_allow_uid_for_current(cmd.uid);
+	cmd.granted = ksu_is_uid_granted_root(cmd.uid);
 
 	if (copy_to_user(arg, &cmd, sizeof(cmd))) {
 		pr_err("uid_granted_root: copy_to_user failed\n");
@@ -419,7 +424,13 @@ static int do_get_feature(void __user *arg)
 
 
 	ret = ksu_get_feature(cmd.feature_id, &cmd.value, &supported);
-	cmd.supported = supported ? 1 : 0;
+	cmd.supported = 0;
+	if (supported) {
+		cmd.supported |= KSU_FEATURE_FLAG_SUPPORTED;
+		if (ksu_feature_is_forced(cmd.feature_id)) {
+			cmd.supported |= KSU_FEATURE_FLAG_FORCED;
+		}
+	}
 
 	if (ret && supported) {
 		pr_err("get_feature: failed for feature %u: %d\n", cmd.feature_id, ret);
@@ -491,14 +502,14 @@ static int do_manage_mark(void __user *arg)
 		cmd.result = (u32)ret;
 		break;
 #else
-        if (susfs_is_current_proc_umounted()) {
-            ret = 0; // SYSCALL_TRACEPOINT is NOT flagged
-        } else {
-            ret = 1; // SYSCALL_TRACEPOINT is flagged
-        }
-        pr_info("manage_mark: ret for pid %d: %d\n", cmd.pid, ret);
-        cmd.result = (u32)ret;
-        break;
+		if (susfs_is_current_proc_umounted()) {
+			ret = 0; // SYSCALL_TRACEPOINT is NOT flagged
+		} else {
+			ret = 1; // SYSCALL_TRACEPOINT is flagged
+		}
+		pr_info("manage_mark: ret for pid %d: %d\n", cmd.pid, ret);
+		cmd.result = (u32)ret;
+		break;
 #endif // #ifndef CONFIG_KSU_SUSFS
 	}
 	case KSU_MARK_MARK: {
@@ -514,9 +525,9 @@ static int do_manage_mark(void __user *arg)
 			}
 		}
 #else
-        if (cmd.pid != 0) {
-            return ret;
-        }
+		if (cmd.pid != 0) {
+			return ret;
+		}
 #endif // #ifndef CONFIG_KSU_SUSFS
 		break;
 	}
@@ -533,17 +544,18 @@ static int do_manage_mark(void __user *arg)
 			}
 		}
 #else
-        if (cmd.pid != 0) {
-            return ret;
-        }
+		if (cmd.pid != 0) {
+			return ret;
+		}
 #endif // #ifndef CONFIG_KSU_SUSFS
 		break;
 	}
 	case KSU_MARK_REFRESH: {
 #ifndef CONFIG_KSU_SUSFS
+		ksu_mark_running_process();
 		pr_info("manage_mark: refreshed running processes\n");
 #else
-        pr_info("susfs: cmd: KSU_MARK_REFRESH: do nothing\n");
+		pr_info("susfs: cmd: KSU_MARK_REFRESH: do nothing\n");
 #endif // #ifndef CONFIG_KSU_SUSFS
 		break;
 	}
@@ -846,6 +858,85 @@ static int do_disable_escape_to_root(void __user *arg)
 {
     set_thread_flag(TIF_KSU_DISABLE_ESCAPE_WITH_ROOT);
     return 0;
+}
+
+/*
+ * Resolve symbols of the running kernel image, exported or not, matching
+ * them like ksuinit's /proc/kallsyms walk. Userspace uses this to bind a
+ * module's undefined symbols before init_module, so the kernel never parses
+ * the module ELF itself.
+ */
+static int do_lookup_symbols(void __user *arg)
+{
+    struct ksu_lookup_symbols_cmd cmd;
+    const u64 __user *unames;
+    u64 __user *uaddrs;
+    char **names;
+    unsigned long *addrs;
+    int ret = 0;
+    u32 i;
+
+    if (copy_from_user(&cmd, arg, sizeof(cmd)))
+        return -EFAULT;
+
+    if (cmd.flags) {
+        pr_err("lookup_symbols: unsupported flags 0x%x\n", cmd.flags);
+        return -EINVAL;
+    }
+    if (!cmd.count || cmd.count > KSU_LOOKUP_SYMBOLS_MAX)
+        return -EINVAL;
+
+    names = kvcalloc(cmd.count, sizeof(*names), GFP_KERNEL);
+    addrs = kvcalloc(cmd.count, sizeof(*addrs), GFP_KERNEL);
+    if (!names || !addrs) {
+        ret = -ENOMEM;
+        goto out;
+    }
+
+    unames = (const u64 __user *)(uintptr_t)cmd.names;
+    uaddrs = (u64 __user *)(uintptr_t)cmd.addrs;
+    for (i = 0; i < cmd.count; i++) {
+        u64 uname;
+        char *name;
+
+        if (get_user(uname, unames + i)) {
+            ret = -EFAULT;
+            goto out;
+        }
+        name = strndup_user((const char __user *)(uintptr_t)uname, KSYM_NAME_LEN);
+        if (IS_ERR(name)) {
+            // An overlong name cannot be a kernel symbol: report it missing.
+            if (PTR_ERR(name) == -EINVAL)
+                continue;
+            ret = PTR_ERR(name);
+            goto out;
+        }
+        if (!*name) {
+            kfree(name);
+            continue;
+        }
+        names[i] = name;
+    }
+
+    ret = ksu_lookup_kernel_symbols((const char *const *)names, addrs, cmd.count);
+    if (ret < 0)
+        goto out;
+
+    for (i = 0; i < cmd.count; i++) {
+        if (put_user((u64)addrs[i], uaddrs + i)) {
+            ret = -EFAULT;
+            goto out;
+        }
+    }
+
+out:
+    if (names) {
+        for (i = 0; i < cmd.count; i++)
+            kfree(names[i]);
+    }
+    kvfree(names);
+    kvfree(addrs);
+    return ret;
 }
 
 // IOCTL handlers mapping table

@@ -1,6 +1,8 @@
 #include <linux/compiler.h>
 #include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/signal.h>
+#endif
 #include <linux/slab.h>
 #include <linux/task_work.h>
 #include <linux/thread_info.h>
@@ -27,8 +29,6 @@
 #include "../susfs/susfs_def.h"
 #include "selinux/selinux.h"
 #endif // #ifdef CONFIG_KSU_SUSFS
-
-extern void disable_seccomp(void);
 
 static inline bool is_zygote_isolated_service_uid(uid_t uid)
 {
@@ -88,6 +88,7 @@ static void ksu_handle_extra_susfs_work(void)
 extern void susfs_try_umount(uid_t uid);
 #endif // #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
 #endif // #ifdef CONFIG_KSU_SUSFS
+
 int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
 {
     // we rely on the fact that zygote always call setresuid(3) with same uids
@@ -100,7 +101,7 @@ int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
 #endif
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-    // Check if spawned process is isolated service first, and force to do umount if so  
+    // Check if spawned process is isolated service first, and force to do umount if so
     if (is_zygote_isolated_service_uid(new_uid)) {
         goto do_umount;
     }
