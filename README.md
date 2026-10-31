@@ -33,6 +33,12 @@ SUSFS (SUS_FS) is a kernel module for hiding modifications from detection. Tradi
 curl -LSs https://raw.githubusercontent.com/Youffx/KernelSU-Next/legacy-susfs/kernel/setup.sh | bash -s legacy-susfs
 ```
 
+To pin a specific release tag instead of tracking the branch:
+
+```
+curl -LSs https://raw.githubusercontent.com/Youffx/KernelSU-Next/v3.3.0-legacy-susfs/kernel/setup.sh | bash -s v3.3.0-legacy-susfs
+```
+
 ---
 
 ## Required
